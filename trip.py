@@ -13,7 +13,7 @@ class Trip():
 
     def __init__(self, t_id, dates=None, stop_times=None):
         self.id = t_id
-        self.dates = sorted(dates) or list()
+        self.dates = sorted(dates or list())
         self.stop_times = stop_times or list()
 
     def __repr__(self):
