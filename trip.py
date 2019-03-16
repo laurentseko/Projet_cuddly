@@ -9,25 +9,26 @@ import datetime
 class Trip():
     """The class Trip is defined here."""
 
-    __slots__ = ['id', 'dates', 'stop_times']
+    __slots__ = ['id', 'direction', 'dates', 'stop_times']
 
-    def __init__(self, t_id, dates=None, stop_times=None):
+    def __init__(self, t_id, direction=None, dates=None, stop_times=None):
         self.id = t_id
-        self.dates = sorted(dates) or list()
+        self.direction = direction
+        self.dates = sorted(dates or list())
         self.stop_times = stop_times or list()
 
     def __repr__(self):
-        return 'Trip(id=%d, dates=%s, stop_times=%s)' % (self.id, self.dates,
-                                                         self.stop_times)
+        return 'Trip(id=%d, direction=%d, dates=%s, stop_times=[.])' % (
+                self.id, self.direction, self.dates)
+        #                                                  self.stop_times)
 
-    def closest(self, stop_id, date_time, dt=datetime.timedelta(minutes=2)):
+    def closest(self, so, date_time):
         """Find the date of the next transport and the date of the first
         stop."""
-        # d = datetime.date(date_time.year, date_time.month, date_time.day)
         for v in self.stop_times:
-            if v[0] == stop_id:
+            if v[0] == so:
                 good_date = None
-                date = None
+                trip_date = None
                 for date in reversed(self.dates):
                     the_date = datetime.datetime(date.year, date.month,
                                                  date.day, v[1][0] % 24,
@@ -36,10 +37,12 @@ class Trip():
                     # print(good_date, the_date, date_time,
                     #       date_time >= the_date)
                     if date_time >= the_date:
-                        return good_date, date
+                        # return good_date, trip_date
+                        break
                     good_date = the_date
+                    trip_date = date
                 # date is not None if len(self.dates) > 0
-                return good_date, date
+                return good_date, trip_date
         return None, None
 
     def date_time(self, stop_id, d_t):
