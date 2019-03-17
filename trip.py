@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
-"""The class Trip is defined here."""
+"""Trip is a data structure that represent a trip for transit.
+
+    The following documentation is automatically generated from the Python
+    source files.  It may be incomplete, incorrect or include features that
+    are considered implementation detail and may vary between Python
+    implementations.  When in doubt, consult the module reference at the
+    location listed above."""
+
 # -*- coding: utf8 -*-
 
 import datetime
@@ -9,17 +16,15 @@ import datetime
 class Trip():
     """The class Trip is defined here."""
 
-    __slots__ = ['id', 'direction', 'dates', 'stop_times']
+    __slots__ = ['id', 'dates', 'stop_times']
 
-    def __init__(self, t_id, direction=None, dates=None, stop_times=None):
+    def __init__(self, t_id, dates=None, stop_times=None):
         self.id = t_id
-        self.direction = direction
         self.dates = sorted(dates or list())
         self.stop_times = stop_times or list()
 
     def __repr__(self):
-        return 'Trip(id=%d, direction=%d, dates=%s, stop_times=[.])' % (
-                self.id, self.direction, self.dates)
+        return 'Trip(id=%d, dates=%s, stop_times=[.])' % (self.id, self.dates)
         #                                                  self.stop_times)
 
     def closest(self, so, date_time):
@@ -34,8 +39,6 @@ class Trip():
                                                  date.day, v[1][0] % 24,
                                                  v[1][1], v[1][2])\
                         + datetime.timedelta(days=v[1][0] // 24)
-                    # print(good_date, the_date, date_time,
-                    #       date_time >= the_date)
                     if date_time >= the_date:
                         # return good_date, trip_date
                         break
