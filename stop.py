@@ -19,7 +19,7 @@ class Stop():
                  'date_trips']
 
     def __init__(self, ids, name=None, lat=None, lon=None, ty=-1, sn=None,
-                 nexts=None, transfers=None, date_trips=None):
+                 nexts=None, transfers=None, date_trips=dict()):
         self.ids = ids
         self.name = name or ''
         self.lat = lat or 0.
@@ -28,7 +28,7 @@ class Stop():
         self.sn = sn or ''
         self.nexts = nexts or list()
         self.transfers = transfers or list()
-        self.date_trips = date_trips or dict()
+        self.date_trips = date_trips
 
     def __repr__(self):
         return 'Stop(ids=%s, name=\'%s\', lat=%f, lon=%f, ty=%d, sn=\'%s\', '\
@@ -75,8 +75,8 @@ class Stop():
             nt_d_t[s_key] = (None, None)
         date = datetime.date(the_date.year, the_date.month, the_date.day)
         dt = datetime.timedelta(days=1)
-        while not limit_date or date <= limit_date:
-            trips = self.date_trips[date]
+        while (not limit_date or date <= limit_date) and len(others) > 0:
+            trips = self.date_trips.get(date)
             if trips is None:
                 date += dt
                 continue
@@ -84,6 +84,7 @@ class Stop():
                 sp_t_iter = iter(t.stop_times)
                 stop_found = False
                 bad_time = True
+                d_t = None
                 for v in sp_t_iter:
                     if v[0] == self:
                         d_t = datetime.datetime(date.year, date.month,
@@ -95,7 +96,7 @@ class Stop():
                             bad_time = False
                         break
                 if bad_time:
-                    break
+                    continue
                 for v in sp_t_iter:
                     v_key = (v[0].name, v[0].sn)
                     if v_key not in others:
@@ -108,8 +109,8 @@ class Stop():
             for v_key in nt_d_t:
                 if v_key in others and nt_d_t[v_key]:
                     others.remove(v_key)
-
             date += dt
+
         return nt_d_t
 
     def destinations(self, the_date, others=None, limit_date=None):

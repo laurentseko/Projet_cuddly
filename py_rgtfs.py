@@ -125,6 +125,7 @@ def load_stops(s_t, t_r_s, r_t_sn):
     """Load the file stops.txt and return a dict."""
     stop_dict = dict()
     i_s_key = dict()
+    sn_date_trips = dict()
 
     csv_file = open('stops.txt', 'r')
     csv_iter = csv.reader(csv_file, delimiter=',')
@@ -138,11 +139,15 @@ def load_stops(s_t, t_r_s, r_t_sn):
         route_id = t_r_s[trip_id][0]
         (ty, sn) = r_t_sn[route_id]
         s_key = (row[2], sn)
-        if stop_dict.get(s_key) is None:
+        so = stop_dict.get(s_key)
+        if so is None:
+            date_trips = sn_date_trips.get(sn)
+            if date_trips is None:
+                date_trips = dict()
+                sn_date_trips[sn] = date_trips
             stop_dict[s_key] = stop.Stop([stop_id], row[2], float(row[4]),
-                                         float(row[5]), ty, sn)
+                                         float(row[5]), ty, sn, date_trips=date_trips)
         else:
-            so = stop_dict[s_key]
             so.ids.append(stop_id)
         i_s_key[stop_id] = s_key
     return stop_dict, i_s_key
@@ -166,20 +171,6 @@ def transfer(i_s_key):
             transfer_cost[(from_stop_id, to_stop_id)] = cost
             transfer_cost[(to_stop_id, from_stop_id)] = cost
     return transfer_cost
-
-
-# 'Fix' some Stop object to save space (RAM)
-def propagate(s_key, stop_dict):
-    """Fix the objects Stop."""
-    s_date_trips = stop_dict[s_key].date_trips
-    nexts = stop_dict[s_key].nexts
-    for ns in nexts:
-        n_key = (ns.name, ns.sn)
-        # print(id(stop_dict[n_key].trips), id(s_trips))
-        # if id(stop_dict[n_key].trips) != id(s_trips):
-        if id(ns.date_trips) != id(s_date_trips):
-            ns.date_trips = s_date_trips
-            propagate(n_key, stop_dict)
 
 
 def load_trips(stop_dict, i_s_key, t_r_s, s_d):
@@ -221,28 +212,11 @@ def load_trips(stop_dict, i_s_key, t_r_s, s_d):
     print('loaded trips: done in', datetime.timedelta(seconds=end-start))
 
     start = time.time()
-    # Two lists per route_short_name
-    for s in stop_dict:
-        propagate(s, stop_dict)
-    ok = False
-    while not ok:
-        ok = True
-        for so in stop_dict.values():
-            s_nexts = so.nexts
-            for n in s_nexts:
-                # n_trips = n.trips
-                n_date_trips = n.date_trips
-                if id(n_date_trips) != id(so.date_trips):
-                    so.date_trips = n_date_trips
-                    ok = False
-    end = time.time()
-    print('route_short_name: done in', datetime.timedelta(seconds=end-start))
-
-    start = time.time()
     # Add trips to each stop
     # for t in trip_dict:
     size = len(trip_dict)
     i = 0
+    list_all = list()
     for to in trip_dict.values():
         so = to.stop_times[0][0]
         for date in to.dates:
@@ -317,6 +291,7 @@ def rec_dijkstra(stop_dict, trip_dict, t_c, src, the_moment, d=None):
 
 def dijkstra(stop_dict, trip_dict, t_c, srcs, the_moment, d=None):
     """Compute the time."""
+    import operator
     M = datetime.datetime.max
     current = list()
     if d is None:
@@ -345,8 +320,6 @@ def dijkstra(stop_dict, trip_dict, t_c, srcs, the_moment, d=None):
                 so = stop_dict[s_key]
                 (next_trip, d_t) = nt_d_t[s_key]
                 if d_t and d[s_key][2] > d_t:
-                    for ns in so.nexts:
-                        print((ns.name, ns.sn))
                     d[s_key] = (cs, next_trip, d_t)
                     # TODO: why?
                     # if len(stop_dict[s_key].transfers) > 0 and\
@@ -367,7 +340,7 @@ def dijkstra(stop_dict, trip_dict, t_c, srcs, the_moment, d=None):
                             if t_key not in next_level:
                                 next_level.append(t_key)
                             # next_level.add(t_key)
-        current = next_level
+        current = sorted(next_level, key=lambda s_key: d[s_key][2])
     return d
 
 
@@ -376,7 +349,6 @@ if __name__ == '__main__':
     s_d = service_date()
     end = time.time()
     print('service_date(): done in', datetime.timedelta(seconds=end-start))
-    print('servide_date len', len(s_d))
 
     start = time.time()
     r_t_sn = route_type_sn(ty=[1])  # Only metro/subway
@@ -432,9 +404,9 @@ if __name__ == '__main__':
     trip_dict = load_trips(stop_dict, i_s_key, t_r_s, s_d)
 
     for so in stop_dict.values():
-        # TODO: bug?
-        if len(so.nexts) < 2:
-            continue
+        # TODO: Why?
+        # if len(so.nexts) < 2:
+        #     continue
         for ns in so.nexts:
             # TODO: use len for precision
             if so not in ns.nexts:
@@ -466,7 +438,6 @@ if __name__ == '__main__':
     not_all = not True
     # Transfer
     for (key_0, key_1) in t_c:
-        print('keys', key_0, key_1)
         if key_0 is None or key_1 is None:
             continue
         # All line if commented
@@ -513,9 +484,10 @@ if __name__ == '__main__':
 
     start = time.time()
     # s_key = i_s_key[1907]
-    # s_key = ('Villejuif-Louis Aragon', '7')
+    s_key = ('Villejuif-Louis Aragon', '7')
     # s_key = ('Jussieu', '10')
-    t_key = ('Jussieu', '7')
+    # t_key = ('Jussieu', '7')
+    # s_key = ('Jussieu', '7')
     # s_key = ("Porte d'Auteuil", '10')
     # d = rec_dijkstra(stop_dict, trip_dict, t_c, s_key, the_day)
     d = dijkstra(stop_dict, trip_dict, t_c, {s_key}, the_day)
