@@ -13,29 +13,9 @@
 import sys
 import time
 import csv
-import pandas as pd
 import datetime
 import stop
 import trip
-
-
-# TODO: use i_s_key
-def transfer():
-    """Load the file transfers.txt and return a dict."""
-    transfer_cost = dict()
-
-    csv_file = open('transfers.txt', 'r')
-    csv_iter = csv.reader(csv_file, delimiter=',')
-    _ = next(csv_iter)
-
-    for row in csv_iter:
-        from_stop_id = int(row[0])
-        to_stop_id = int(row[1])
-        if from_stop_id > to_stop_id:
-            from_stop_id, to_stop_id = to_stop_id, from_stop_id
-        cost = int(row[3])
-        transfer_cost[(from_stop_id, to_stop_id)] = cost
-    return transfer_cost
 
 
 def service_date():
@@ -72,12 +52,15 @@ def service_date():
         num = int(row[1])
         date = datetime.date(num // 10000, (num % 10000) // 100, num % 100)
         if row[2] == '1':
-            if s_d.get(service_id) is None:
-                s_d[service_id] = list()
-            s_d[service_id].append(date)
+            dates = s_d.get(service_id)
+            if dates is None:
+                dates = list()
+                s_d[service_id] = dates
+            dates.append(date)
         elif row[2] == '2':
-            if s_d.get(service_id) is not None:
-                s_d[service_id].remove(date)
+            dates = s_d.get(service_id)
+            if dates is not None:
+                dates.remove(date)
 
     return s_d
 
@@ -120,7 +103,6 @@ def trip_route_service(r_t_sn):
     return t_r_s
 
 
-# FIXME: Don't read the file twice from  disk
 def stop_trip(t_r_s):
     s_t = dict()
 
@@ -137,28 +119,6 @@ def stop_trip(t_r_s):
             # else:
             #     s_t[stop_id] = -1
     return s_t
-
-
-def trip_stop(t_r_s):
-    t_s = dict()
-
-    csv_file = open('stop_times.txt', 'r')
-    csv_iter = csv.reader(csv_file, delimiter=',')
-    _ = next(csv_iter)
-
-    for row in csv_iter:
-        trip_id = int(row[0])
-        if trip_id not in t_r_s:
-            continue
-        stop_id = int(row[3])
-        if t_s.get(trip_id) is None:
-            # O(n) for search
-            t_s[trip_id] = list()
-            # O(1) for search
-            # t_s[trip_id] = set()
-        t_s[trip_id].append(stop_id)
-        # t_s[trip_id].add(stop_id)
-    return t_s
 
 
 def load_stops(s_t, t_r_s, r_t_sn):
@@ -188,45 +148,42 @@ def load_stops(s_t, t_r_s, r_t_sn):
     return stop_dict, i_s_key
 
 
+def transfer(i_s_key):
+    """Load the file transfers.txt and return a dict."""
+    transfer_cost = dict()
+
+    csv_file = open('transfers.txt', 'r')
+    csv_iter = csv.reader(csv_file, delimiter=',')
+    _ = next(csv_iter)
+
+    for row in csv_iter:
+        from_stop_id = int(row[0])
+        to_stop_id = int(row[1])
+        from_stop_id = i_s_key.get(from_stop_id)
+        to_stop_id = i_s_key.get(to_stop_id)
+        if from_stop_id and to_stop_id:
+            cost = int(row[3])
+            transfer_cost[(from_stop_id, to_stop_id)] = cost
+            transfer_cost[(to_stop_id, from_stop_id)] = cost
+    return transfer_cost
+
+
 # 'Fix' some Stop object to save space (RAM)
 def propagate(s_key, stop_dict):
     """Fix the objects Stop."""
-    s_trips = stop_dict[s_key].trips
+    s_date_trips = stop_dict[s_key].date_trips
     nexts = stop_dict[s_key].nexts
-    for d in [0, 1]:
-        for n in nexts[d]:
-            n_key = (n.name, n.sn)
-            # print(id(stop_dict[n_key].trips), id(s_trips))
-            if id(stop_dict[n_key].trips) != id(s_trips):
-                stop_dict[n_key].trips = s_trips
-                propagate(n_key, stop_dict)
-
-
-# 'Fix' bad design
-def propagate_orientation(i, orientation):
-    """Fix the orientation."""
-    # [nexts, counter, direction]
-    o = orientation[i][1]
-    for j in orientation[i][0]:
-        if orientation[j][1] != o:
-            orientation[j][1] = o
-            propagate_orientation(j, orientation)
-
-
-# Still 'fixing' bad design
-def propagate_direction(i, orientation):
-    """Set direction."""
-    # [nexts, counter, direction]
-    direction = orientation[i][2]
-    for j in orientation[i][0]:
-        if orientation[j][2] is None:
-            orientation[j][2] = direction
-            propagate_direction(j, orientation)
+    for ns in nexts:
+        n_key = (ns.name, ns.sn)
+        # print(id(stop_dict[n_key].trips), id(s_trips))
+        # if id(stop_dict[n_key].trips) != id(s_trips):
+        if id(ns.date_trips) != id(s_date_trips):
+            ns.date_trips = s_date_trips
+            propagate(n_key, stop_dict)
 
 
 def load_trips(stop_dict, i_s_key, t_r_s, s_d):
     trip_dict = dict()
-    orientation = dict()
 
     start = time.time()
     csv_file = open('stop_times.txt', 'r')
@@ -246,22 +203,8 @@ def load_trips(stop_dict, i_s_key, t_r_s, s_d):
         r = int(row[4])
         trip_id = int(row[0])
         if r - p == 1:
-            if orientation.get(p_i) is None:
-                # [nexts, counter, direction]
-                orientation[p_i] = [list(), counter, None]
-                counter += 1
-            if orientation.get(r_i) is None:
-                orientation[r_i] = [list(), counter, None]
-                counter += 1
-            if r_i not in orientation[p_i][0]:
-                orientation[p_i][0].append(r_i)
-            # if stop_dict[r_key] not in stop_dict[p_key].nexts[direction]:
-            #     stop_dict[p_key].nexts[direction].append(stop_dict[r_key])
-        elif r == 1:
-            # print('one alone', r_i, i_s_key[r_i])
-            if orientation.get(r_i) is None:
-                orientation[r_i] = [list(), counter, None]
-                counter += 1
+            if stop_dict[r_key] not in stop_dict[p_key].nexts:
+                stop_dict[p_key].nexts.append(stop_dict[r_key])
         if prev_trip_id != trip_id:
             service_id = t_r_s[trip_id][1]
             dates = s_d[service_id]
@@ -271,103 +214,11 @@ def load_trips(stop_dict, i_s_key, t_r_s, s_d):
                                              (int(hms[0]), int(hms[1]),
                                               int(hms[2]))))
         p_i = r_i
-        # p_key = r_key
+        p_key = r_key
         p = r
         prev_trip_id = trip_id
     end = time.time()
-    print('stop_times.txt: done in', datetime.timedelta(seconds=end-start))
-
-    start = time.time()
-    for i in orientation:
-        propagate_orientation(i, orientation)
-    ok = False
-    while not ok:
-        ok = True
-        for i in orientation:
-            for j in orientation[i][0]:
-                if orientation[i][1] != orientation[j][1]:
-                    orientation[i][1] = orientation[j][1]
-                    ok = False
-    end = time.time()
-    print('orientation: done in', datetime.timedelta(seconds=end-start))
-
-    start = time.time()
-    for s_key in stop_dict:
-        so = stop_dict[s_key]
-        if len(so.ids) == 2:
-            # TODO: prove both stop_id have different direction
-            same = False
-            for jd, j in enumerate(orientation[so.ids[0]][0]):
-                for kd, k in enumerate(orientation[so.ids[1]][0]):
-                    if i_s_key[j] == i_s_key[k]:
-                        same = True
-                        break
-                if same:
-                    break
-            other_same = False
-            srcs = [list(), list()]
-            for i in orientation:
-                for j in orientation[i][0]:
-                    for drt in [0, 1]:
-                        if j == so.ids[drt]:
-                            if j not in srcs[drt]:
-                                srcs[drt].append(j)
-            for jd, j in enumerate(srcs[0]):
-                for kd, k in enumerate(srcs[1]):
-                    if kd <= jd:
-                        continue
-                    if i_s_key[j] == i_s_key[k]:
-                        other_same = True
-                        break
-                if other_same:
-                    break
-            if same:
-                print('Found a weird one', so)
-            if other_same:
-                print('Yes, a weird one', so)
-                same = True
-            if not same:
-                if orientation[so.ids[0]][1] < orientation[so.ids[1]][1]:
-                    orientation[so.ids[0]][2] = 0
-                    orientation[so.ids[1]][2] = 1
-                elif orientation[so.ids[0]][1] > orientation[so.ids[1]][1]:
-                    orientation[so.ids[0]][2] = 1
-                    orientation[so.ids[1]][2] = 0
-                    # TODO: swap ids?
-                else:
-                    print('Error in setting directions')
-                    sys.exit(1)
-        elif len(so.ids) > 2:
-            # Weird stop?
-            print('weird?', so)
-    for i in orientation:
-        propagate_direction(i, orientation)
-    ok = False
-    while not ok:
-        ok = True
-        for i in orientation:
-            if orientation[i][2] is not None:
-                continue
-            ok = False
-            for j in orientation[i][0]:
-                if orientation[j][2] is not None:
-                    orientation[i][2] = orientation[j][2]
-                    break
-    end = time.time()
-    print('setting directions: done in', datetime.timedelta(seconds=end-start))
-
-    start = time.time()
-    for s in stop_dict:
-        so = stop_dict[s]
-        for i in so.ids:
-            direction = orientation[i][2]
-            # so.nexts[direction] = list()
-            for j in orientation[i][0]:
-                # so.nexts[direction].append(stop_dict[i_s_key[i]])
-                so_j = stop_dict[i_s_key[j]]
-                so.nexts[direction].append(so_j)
-    end = time.time()
-    print('connecting stops: done in', datetime.timedelta(seconds=end-start))
+    print('loaded trips: done in', datetime.timedelta(seconds=end-start))
 
     start = time.time()
     # Two lists per route_short_name
@@ -376,24 +227,37 @@ def load_trips(stop_dict, i_s_key, t_r_s, s_d):
     ok = False
     while not ok:
         ok = True
-        for s in stop_dict:
-            s_nexts = stop_dict[s].nexts
-            for drt in [0, 1]:
-                for n in s_nexts[drt]:
-                    n_trips = n.trips
-                    if id(n_trips) != id(stop_dict[s].trips):
-                        stop_dict[s].trips = n_trips
-                        ok = False
+        for so in stop_dict.values():
+            s_nexts = so.nexts
+            for n in s_nexts:
+                # n_trips = n.trips
+                n_date_trips = n.date_trips
+                if id(n_date_trips) != id(so.date_trips):
+                    so.date_trips = n_date_trips
+                    ok = False
     end = time.time()
     print('route_short_name: done in', datetime.timedelta(seconds=end-start))
 
     start = time.time()
     # Add trips to each stop
-    for t in trip_dict:
-        so = trip_dict[t].stop_times[0][0]
-        trips = so.trips
-        if trip_dict[t] not in trips:
-            trips.append(trip_dict[t])
+    # for t in trip_dict:
+    size = len(trip_dict)
+    i = 0
+    for to in trip_dict.values():
+        so = to.stop_times[0][0]
+        for date in to.dates:
+            trips = so.date_trips.get(date)
+            if trips is None:
+                trips = list()
+                so.date_trips[date] = trips
+            if to not in trips:
+                trips.append(to)
+        i += 1
+        if i % (size // 10) == 0:
+            print(i)
+        # trips = so.trips
+        # if to not in trips:
+        #     trips.append(to)
     end = time.time()
     print('trips added: done in', datetime.timedelta(seconds=end-start))
     return trip_dict
@@ -451,46 +315,51 @@ def rec_dijkstra(stop_dict, trip_dict, t_c, src, the_moment, d=None):
     return d
 
 
-def dijkstra(stop_dict, trip_dict, t_c, src, the_moment, d=None):
+def dijkstra(stop_dict, trip_dict, t_c, srcs, the_moment, d=None):
     """Compute the time."""
     M = datetime.datetime.max
+    current = list()
     if d is None:
         d = dict()
         for k in stop_dict:
-            d[k] = [None, None, M]  # so, to, datetime
-        d[src][2] = the_moment
+            d[k] = (None, None, M)  # so, to, datetime
+        for src in srcs:
+            d[src] = (None, None, the_moment)
+            current.append(src)
     limit_date = datetime.date(the_moment.year, the_moment.month,
                                the_moment.day)\
         + datetime.timedelta(days=2)
 
-    current = [src]
-    # current = {src}
     while len(current) > 0:
         next_level = list()
         # next_level = set()
         for c_key in current:
-            nt_d_t = stop_dict[c_key].destinations(d[c_key][2],
-                                                   limit_date=limit_date)
+            cs = stop_dict[c_key]
+            # nt_d_t = cs.destinations(d[c_key][2], limit_date=limit_date)
+            limit_date = datetime.date(d[c_key][2].year, d[c_key][2].month,
+                                       d[c_key][2].day)\
+                + datetime.timedelta(days=1)
+            nt_d_t = cs.line_dijkstra(d[c_key][2], limit_date=limit_date)
+            # nt_d_t = cs.line_dijkstra(d[c_key][2])
             for s_key in nt_d_t:
-                if nt_d_t[s_key][1] and d[s_key][2] > nt_d_t[s_key][1]:
-                    d[s_key][0] = stop_dict[c_key]
-                    d[s_key][1] = nt_d_t[s_key][0]
-                    d[s_key][2] = nt_d_t[s_key][1]
+                so = stop_dict[s_key]
+                (next_trip, d_t) = nt_d_t[s_key]
+                if d_t and d[s_key][2] > d_t:
+                    for ns in so.nexts:
+                        print((ns.name, ns.sn))
+                    d[s_key] = (cs, next_trip, d_t)
                     # TODO: why?
                     # if len(stop_dict[s_key].transfers) > 0 and\
                     #         s_key not in next_level:
                     #     next_level.append(s_key)
                     # next_level.add(s_key)
-                    for t in stop_dict[s_key].transfers:
-                        t_key = (t.name, t.sn)
-                        key = (stop_dict[s_key].ids[0], t.ids[0])
-                        if stop_dict[s_key].ids[0] > t.ids[0]:
-                            key = (t.ids[0], stop_dict[s_key].ids[0])
+                    for to in so.transfers:
+                        t_key = (to.name, to.sn)
+                        key = (t_key, s_key)
                         tt = datetime.timedelta(seconds=t_c[key])
-                        if d[t_key][2] > d[s_key][2] + tt:
-                            d[t_key][0] = stop_dict[s_key]
-                            d[t_key][1] = None
-                            d[t_key][2] = d[s_key][2] + tt
+                        d_t = d[s_key][2] + tt
+                        if d[t_key][2] > d_t:
+                            d[t_key] = (so, None, d_t)
                             if t_key not in next_level:
                                 next_level.append(t_key)
                             # next_level.add(t_key)
@@ -504,14 +373,10 @@ def dijkstra(stop_dict, trip_dict, t_c, src, the_moment, d=None):
 
 if __name__ == '__main__':
     start = time.time()
-    t_c = transfer()
-    end = time.time()
-    print('transfer(): done in', datetime.timedelta(seconds=end-start))
-
-    start = time.time()
     s_d = service_date()
     end = time.time()
     print('service_date(): done in', datetime.timedelta(seconds=end-start))
+    print('servide_date len', len(s_d))
 
     start = time.time()
     r_t_sn = route_type_sn(ty=[1])  # Only metro/subway
@@ -522,13 +387,31 @@ if __name__ == '__main__':
     start = time.time()
     t_r_s = trip_route_service(r_t_sn)
     end = time.time()
-    print('trip_route_service_direction(): done in',
+    print('trip_route_service(): done in',
           datetime.timedelta(seconds=end-start))
 
     # start = time.time()
     # t_s = trip_stop(t_r_s)
     # end = time.time()
     # print('trip_stop(): done in', datetime.timedelta(seconds=end-start))
+
+    # start = time.time()
+    # TODO: Why is pandas so slow?
+    # stop_times = pd.read_csv('stop_times.txt', header=0, sep=',', engine='c',
+    #                          memory_map=True, low_memory=False,
+    #                          usecols=['trip_id', 'departure_time',
+    #                                   'stop_id', 'stop_sequence'])
+    # print(stop_times.info())
+
+    # stop_times = list()
+    # csv_file = open('stop_times.txt', 'r')
+    # csv_iter = csv.reader(csv_file, delimiter=',')
+    # _ = next(csv_iter)
+
+    # for row in csv_iter:
+    #     stop_times.append((int(row[0]), row[2], int(row[3]), int(row[4])))
+    # end = time.time()
+    # print('stop_times.txt: done in', datetime.timedelta(seconds=end-start))
 
     start = time.time()
     s_t = stop_trip(t_r_s)
@@ -541,34 +424,29 @@ if __name__ == '__main__':
     end = time.time()
     print('load_stops(): done in', datetime.timedelta(seconds=end-start))
 
-    # TODO: use pandas
-    # stop_times = pd.read_csv('stop_times.txt', header=0, usecols=['trip_id', 'departure_time', 'stop_id', 'stop_sequence'])
+    start = time.time()
+    t_c = transfer(i_s_key)
+    end = time.time()
+    print('transfer(): done in', datetime.timedelta(seconds=end-start))
+
     trip_dict = load_trips(stop_dict, i_s_key, t_r_s, s_d)
+
+    for so in stop_dict.values():
+        # TODO: bug?
+        if len(so.nexts) < 2:
+            continue
+        for ns in so.nexts:
+            # TODO: use len for precision
+            if so not in ns.nexts:
+                ns.nexts.append(so)
 
     start = time.time()
     for s_key in stop_dict:
-        num_nexts = len(stop_dict[s_key].nexts[0]) +\
-                    len(stop_dict[s_key].nexts[1])
-        test = False
-        # Huge test
-        if len(stop_dict[s_key].ids) >= 2:
-            for drt in [0, 1]:
-                for ns in stop_dict[s_key].nexts[drt]:
-                    if len(ns.ids) == 1:
-                        test = True
-                        break
-                if test:
-                    break
-        # Turn a stop in a transfer stop
-        if num_nexts > 2 or test:
-            t_0 = stop_dict[s_key].ids[0]
-            t_1 = stop_dict[s_key].ids[1]
-            if t_0 > t_1:
-                t_0 = stop_dict[s_key].ids[1]
-                t_1 = stop_dict[s_key].ids[0]
-            t_c[(t_0, t_1)] = 0
-            t_c[(t_0, t_0)] = 0
-            t_c[(t_1, t_1)] = 0
+        so = stop_dict[s_key]
+        if len(so.nexts) > 2:
+            if so not in so.transfers:
+                so.transfers.append(so)
+            t_c[(s_key, s_key)] = 0
     end = time.time()
     print('Fix t_c: done in', datetime.timedelta(seconds=end-start))
 
@@ -587,9 +465,8 @@ if __name__ == '__main__':
     lines = ['7', '10', '6']
     not_all = not True
     # Transfer
-    for k in t_c:
-        key_0 = i_s_key.get(k[0])
-        key_1 = i_s_key.get(k[1])
+    for (key_0, key_1) in t_c:
+        print('keys', key_0, key_1)
         if key_0 is None or key_1 is None:
             continue
         # All line if commented
@@ -634,17 +511,14 @@ if __name__ == '__main__':
     #     print(drt, ':', line)
     # sys.exit(2)
 
-    for so in stop_dict[('Tolbiac', '7')].transfers:
-        print(so.name)
-    for so in stop_dict[('Maison Blanche', '7')].transfers:
-        print(so.name)
     start = time.time()
     # s_key = i_s_key[1907]
-    s_key = ('Villejuif-Louis Aragon', '7')
+    # s_key = ('Villejuif-Louis Aragon', '7')
     # s_key = ('Jussieu', '10')
+    t_key = ('Jussieu', '7')
     # s_key = ("Porte d'Auteuil", '10')
     # d = rec_dijkstra(stop_dict, trip_dict, t_c, s_key, the_day)
-    d = dijkstra(stop_dict, trip_dict, t_c, s_key, the_day)
+    d = dijkstra(stop_dict, trip_dict, t_c, {s_key}, the_day)
     end = time.time()
     # print('rec_dijkstra(): done in', datetime.timedelta(seconds=end-start))
     print('dijkstra(): done in', datetime.timedelta(seconds=end-start))
@@ -667,7 +541,7 @@ if __name__ == '__main__':
     # dst = ("Eglise d'Auteuil", '10')
     while True:
         if d[dst][0]:
-            print(dst[0], '/', d[dst][0].name, '/', d[dst][2])
+            print(dst, '/', (d[dst][0].name, d[dst][0].sn), '/', d[dst][2])
             dst = (d[dst][0].name, d[dst][0].sn)
         else:
             break

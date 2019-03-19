@@ -16,19 +16,19 @@ import datetime
 class Stop():
     """The class Stop is defined here."""
     __slots__ = ['ids', 'name', 'lat', 'lon', 'ty', 'sn', 'nexts', 'transfers',
-                 'trips']
+                 'date_trips']
 
-    def __init__(self, ids, name=None, lat=None, lon=None, ty=None, sn=None,
-                 nexts=None, transfers=None, trips=None):
+    def __init__(self, ids, name=None, lat=None, lon=None, ty=-1, sn=None,
+                 nexts=None, transfers=None, date_trips=None):
         self.ids = ids
         self.name = name or ''
         self.lat = lat or 0.
         self.lon = lon or 0.
-        self.ty = ty or -1
+        self.ty = ty
         self.sn = sn or ''
-        self.nexts = nexts or (list(), list())
+        self.nexts = nexts or list()
         self.transfers = transfers or list()
-        self.trips = trips or list()
+        self.date_trips = date_trips or dict()
 
     def __repr__(self):
         return 'Stop(ids=%s, name=\'%s\', lat=%f, lon=%f, ty=%d, sn=\'%s\', '\
@@ -64,15 +64,60 @@ class Stop():
                 next_trip = t
         return next_trip, d_t, date
 
+    def line_dijkstra(self, the_date, others=None, limit_date=None):
+        if others is None:
+            others = self.line()
+        s_key = (self.name, self.sn)
+        if s_key in others:
+            others.remove(s_key)
+        nt_d_t = dict()
+        for s_key in others:
+            nt_d_t[s_key] = (None, None)
+        date = datetime.date(the_date.year, the_date.month, the_date.day)
+        dt = datetime.timedelta(days=1)
+        while not limit_date or date <= limit_date:
+            trips = self.date_trips[date]
+            if trips is None:
+                date += dt
+                continue
+            for t in trips:
+                sp_t_iter = iter(t.stop_times)
+                stop_found = False
+                bad_time = True
+                for v in sp_t_iter:
+                    if v[0] == self:
+                        d_t = datetime.datetime(date.year, date.month,
+                                                date.day,
+                                                v[1][0] % 24, v[1][1],
+                                                v[1][2])\
+                            + datetime.timedelta(days=v[1][0]//24)
+                        if the_date < d_t:
+                            bad_time = False
+                        break
+                if bad_time:
+                    break
+                for v in sp_t_iter:
+                    v_key = (v[0].name, v[0].sn)
+                    if v_key not in others:
+                        continue
+                    d_t = datetime.datetime(date.year, date.month, date.day,
+                                            v[1][0] % 24, v[1][1], v[1][2])\
+                        + datetime.timedelta(days=v[1][0]//24)
+                    if nt_d_t[v_key][1] is None or nt_d_t[v_key][1] > d_t:
+                        nt_d_t[v_key] = (t, d_t)
+            for v_key in nt_d_t:
+                if v_key in others and nt_d_t[v_key]:
+                    others.remove(v_key)
+
+            date += dt
+        return nt_d_t
+
     def destinations(self, the_date, others=None, limit_date=None):
         """Find a trip for all destinations in 'others'."""
         # The line Dijkstra?
         # TODO: rename others
         if others is None:
-            others = set()
-            for drt in [0, 1]:
-                one_side = self.line(drt)
-                others.update(one_side)
+            others = self.line()
         s_key = (self.name, self.sn)
         if s_key in others:
             others.remove(s_key)
@@ -116,16 +161,16 @@ class Stop():
                         nt_d_t[v_key] = (t, d_t)
         return nt_d_t
 
-    def line(self, direction, the_line=None):
+    def line(self, the_line=None):
         """Find stops of a line."""
         if the_line is None:
             the_line = {(self.name, self.sn)}
-        for n in self.nexts[direction]:
+        for n in self.nexts:
             n_key = (n.name, n.sn)
             if n_key not in the_line:
                 the_line.add(n_key)
                 # the_line.update(n.line())  # Not right
-                n.line(direction, the_line)
+                n.line(the_line)
         return the_line
 
 

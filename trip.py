@@ -18,10 +18,10 @@ class Trip():
 
     __slots__ = ['id', 'dates', 'stop_times']
 
-    def __init__(self, t_id, dates=None, stop_times=None):
+    def __init__(self, t_id, dates=list(), stop_times=list()):
         self.id = t_id
-        self.dates = sorted(dates or list())
-        self.stop_times = stop_times or list()
+        self.dates = sorted(dates)
+        self.stop_times = stop_times
 
     def __repr__(self):
         return 'Trip(id=%d, dates=%s, stop_times=[.])' % (self.id, self.dates)
