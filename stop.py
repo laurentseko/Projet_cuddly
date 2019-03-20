@@ -72,7 +72,7 @@ class Stop():
             others.remove(s_key)
         nt_d_t = dict()
         for s_key in others:
-            nt_d_t[s_key] = (None, None)
+            nt_d_t[s_key] = (None, None)  # trip, date_time
         date = datetime.date(the_date.year, the_date.month, the_date.day)
         dt = datetime.timedelta(days=1)
         while (not limit_date or date <= limit_date) and len(others) > 0:
