@@ -18,28 +18,24 @@ class Stop():
     __slots__ = ['ids', 'name', 'lat', 'lon', 'ty', 'sn', 'nexts', 'transfers',
                  'date_trips']
 
-    def __init__(self, ids, name=None, lat=None, lon=None, ty=-1, sn=None,
-                 nexts=None, transfers=None, date_trips=dict()):
+    def __init__(self, ids, name=None, lat=None, lon=None, ty=-1,
+                 short_name=' ', nexts=None, transfers=None,
+                 date_trips=dict()):
         self.ids = ids
         self.name = name or ''
         self.lat = lat or 0.
         self.lon = lon or 0.
-        self.ty = ty
-        self.sn = sn or ''
+        self.ty = ty  # type
+        self.sn = short_name  # short_name
         self.nexts = nexts or list()
         self.transfers = transfers or list()
         self.date_trips = date_trips
 
     def __repr__(self):
-        return 'Stop(ids=%s, name=\'%s\', lat=%f, lon=%f, ty=%d, sn=\'%s\', '\
-               'nexts=[.], transfers=[.], trips=[.])' % (self.ids,
-                                                             self.name,
-                                                             self.lat,
-                                                             self.lon,
-                                                             self.ty, self.sn)
-        #                                                     self.nexts,
-        #                                                     self.transfers,
-        #                                                     self.trips)
+        return 'Stop(ids=%s, name=\'%s\', lat=%f, lon=%f, ty=%d, '\
+               'short_name=\'%s\', nexts=[.], transfers=[.], trips=[.])' \
+                % (self.ids, self.name, self.lat, self.lon, self.ty, self.sn)
+        #           self.nexts, self.transfers, self.trips)
 
     def __eq__(self, other):
         # Overengineered?
@@ -50,30 +46,32 @@ class Stop():
         return False
 
     def find_trip(self, the_date):
-        """Find a trip given a date."""
-        next_trip = None
+        """Find a trip at a given date."""
+        the_trip = None
         d_t = None
-        date = None
-        # Not nice
-        for t in self.trips:
-            # print(t)
-            tmp_d_t = t.closest(self, the_date)
-            if d_t is None or (tmp_d_t[0] is not None and d_t > tmp_d_t[0]):
-                d_t = tmp_d_t[0]
-                date = tmp_d_t[1]
-                next_trip = t
-        return next_trip, d_t, date
+        trip_date = None
+        date = the_date.date()
+        for tr in self.date_trips[date]:
+            (t, dt) = tr.time(self)
+            if t is None:
+                continue
+            tmp_d_t = datetime.datetime.combine(date, t) + dt
+            if d_t is None or d_t > tmp_d_t:
+                d_t = tmp_d_t
+                the_trip = tr
+        return the_trip, d_t
 
     def line_dijkstra(self, the_date, others=None, limit_date=None):
+        """Find trips connecting self and the others stops."""
         if others is None:
             others = self.line()
         s_key = (self.name, self.sn)
         if s_key in others:
             others.remove(s_key)
-        nt_d_t = dict()
+        tr_d_t = dict()
         for s_key in others:
-            nt_d_t[s_key] = (None, None)  # trip, date_time
-        date = datetime.date(the_date.year, the_date.month, the_date.day)
+            tr_d_t[s_key] = (None, None)  # trip, date_time
+        date = the_date.date()
         dt = datetime.timedelta(days=1)
         while (not limit_date or date <= limit_date) and len(others) > 0:
             trips = self.date_trips.get(date)
@@ -82,7 +80,6 @@ class Stop():
                 continue
             for t in trips:
                 sp_t_iter = iter(t.stop_times)
-                stop_found = False
                 bad_time = True
                 d_t = None
                 for v in sp_t_iter:
@@ -104,63 +101,13 @@ class Stop():
                     d_t = datetime.datetime(date.year, date.month, date.day,
                                             v[1][0] % 24, v[1][1], v[1][2])\
                         + datetime.timedelta(days=v[1][0]//24)
-                    if nt_d_t[v_key][1] is None or nt_d_t[v_key][1] > d_t:
-                        nt_d_t[v_key] = (t, d_t)
-            for v_key in nt_d_t:
-                if v_key in others and nt_d_t[v_key]:
+                    if tr_d_t[v_key][1] is None or tr_d_t[v_key][1] > d_t:
+                        tr_d_t[v_key] = (t, d_t)
+            for v_key in tr_d_t:
+                if v_key in others and tr_d_t[v_key]:
                     others.remove(v_key)
             date += dt
-
-        return nt_d_t
-
-    def destinations(self, the_date, others=None, limit_date=None):
-        """Find a trip for all destinations in 'others'."""
-        # The line Dijkstra?
-        # TODO: rename others
-        if others is None:
-            others = self.line()
-        s_key = (self.name, self.sn)
-        if s_key in others:
-            others.remove(s_key)
-        nt_d_t = dict()
-        for s_key in others:
-            nt_d_t[s_key] = (None, None)
-        for t in self.trips:
-            sp_t_iter = iter(t.stop_times)
-            stop_found = False
-            for v in sp_t_iter:
-                if v[0] == self:
-                    stop_found = True
-                    break
-            if not stop_found:
-                continue
-            bad_date = False
-            for date in reversed(t.dates):
-                if limit_date and date > limit_date:
-                    continue
-                sp_t_iter = iter(t.stop_times)
-                for v in sp_t_iter:
-                    if v[0] == self:
-                        d_t = datetime.datetime(date.year, date.month,
-                                                date.day,
-                                                v[1][0] % 24, v[1][1],
-                                                v[1][2])\
-                            + datetime.timedelta(days=v[1][0]//24)
-                        if the_date >= d_t:
-                            bad_date = True
-                        break
-                if bad_date:
-                    break
-                for v in sp_t_iter:
-                    v_key = (v[0].name, v[0].sn)
-                    if v_key not in others:
-                        continue
-                    d_t = datetime.datetime(date.year, date.month, date.day,
-                                            v[1][0] % 24, v[1][1], v[1][2])\
-                        + datetime.timedelta(days=v[1][0]//24)
-                    if nt_d_t[v_key][1] is None or nt_d_t[v_key][1] > d_t:
-                        nt_d_t[v_key] = (t, d_t)
-        return nt_d_t
+        return tr_d_t
 
     def line(self, the_line=None):
         """Find stops of a line."""

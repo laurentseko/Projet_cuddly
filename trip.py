@@ -24,16 +24,16 @@ class Trip():
         self.stop_times = stop_times or list()
 
     def __repr__(self):
-        return 'Trip(id=%d, dates=%s, stop_times=[.])' % (self.id, self.dates)
-        #                                                  self.stop_times)
+        return 'Trip(id=%d, dates=%s, stop_times=[.])' \
+                % (self.id, self.dates)  # , self.stop_times)
 
-    def closest(self, so, date_time):
+    def closest(self, so, date):
         """Find the date of the next transport and the date of the first
         stop."""
+        good_date = None
+        trip_date = None
         for v in self.stop_times:
             if v[0] == so:
-                good_date = None
-                trip_date = None
                 for date in reversed(self.dates):
                     the_date = datetime.datetime(date.year, date.month,
                                                  date.day, v[1][0] % 24,
@@ -45,20 +45,20 @@ class Trip():
                     good_date = the_date
                     trip_date = date
                 # date is not None if len(self.dates) > 0
-                return good_date, trip_date
-        return None, None
-
-    def date_time(self, stop_id, d_t):
-        """The date of a stop."""
-        dd_t = None
-        # TODO: Avoid research, return a list()
-        for v in self.stop_times:
-            if stop_id == v[0]:
-                dd_t = datetime.datetime(d_t.year, d_t.month, d_t.day,
-                                         v[1][0] % 24, v[1][1], v[1][2])\
-                        + datetime.timedelta(days=v[1][0]//24)
+                # return good_date, trip_date
                 break
-        return dd_t
+        return good_date, trip_date
+
+    def time(self, so):
+        """Return the time a stop will be served and date change."""
+        t = None
+        dt = None
+        for v in self.stop_times:
+            if so == v[0]:
+                t = datetime.time(v[1][0] % 24, v[1][1], v[1][2])
+                dt = datetime.timedelta(days=v[1][0]//24)
+                break
+        return t, dt
 
 
 if __name__ == '__main__':
