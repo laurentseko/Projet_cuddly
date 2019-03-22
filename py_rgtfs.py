@@ -53,10 +53,7 @@ def service_date():
         num = int(row[1])
         date = datetime.date(num // 10000, (num % 10000) // 100, num % 100)
         if row[2] == '1':
-            dates = se_d.get(service_id)
-            if dates is None:
-                dates = list()
-                se_d[service_id] = dates
+            dates = se_d.setdefault(service_id, list())
             dates.append(date)
         elif row[2] == '2':
             dates = se_d.get(service_id)
@@ -147,10 +144,7 @@ def load_stops(s_tr, tr_r_se, r_ty_sn):
         s_key = (row[2], sn)
         so = stop_dict.get(s_key)
         if so is None:
-            date_trips = sn_date_trips.get(sn)
-            if date_trips is None:
-                date_trips = dict()
-                sn_date_trips[sn] = date_trips
+            date_trips = sn_date_trips.setdefault(sn, dict())
             stop_dict[s_key] = stop.Stop([stop_id], row[2], float(row[4]),
                                          float(row[5]), ty, sn,
                                          date_trips=date_trips)
@@ -186,6 +180,7 @@ def transfer(i_s_key):
 def load_trips(stop_dict, i_s_key, tr_r_se, se_d):
     """Load the file stop_times.txt and return a dict."""
     trip_dict = dict()
+    # stop_chain = dict()
 
     csv_file = open('stop_times.txt', 'r')
     csv_iter = csv.reader(csv_file, delimiter=',')
@@ -206,6 +201,9 @@ def load_trips(stop_dict, i_s_key, tr_r_se, se_d):
         if r - p == 1:
             if stop_dict[r_key] not in stop_dict[p_key].nexts:
                 stop_dict[p_key].nexts.append(stop_dict[r_key])
+            # chain = stop_chain.setdefault(p_i, list())
+            # if r_i not in chain:
+            #     chain.append(r_i)
         if prev_trip_id != trip_id:
             service_id = tr_r_se[trip_id][1]
             dates = se_d[service_id]
@@ -218,11 +216,30 @@ def load_trips(stop_dict, i_s_key, tr_r_se, se_d):
         # else:
         #     if stop_dict[r_key] not in stop_dict[p_key].nexts:
         #         stop_dict[p_key].nexts.append(stop_dict[r_key])
+        #     chain = stop_chain.setdefault(p_i, list())
+        #     if r_i not in chain:
+        #         chain.append(r_i)
         # p_i = r_i
         p_key = r_key
         p = r
         prev_trip_id = trip_id
     csv_file.close()
+
+    # TODO: finish
+    # sn_s_ch = list()
+    # for stop_id in stop_chain:
+    #     while True:
+    #         chain = stop_chain[stop_id]
+    #         s_key = i_s_key[stop_id]
+    #         s_ch = sn_s_ch.setdefault(s_key[1], dict())
+    #         ch = s_ch.setdefault(s_key, (list(), list()))
+    #         for drt in [0, 1]:
+    #             if len(ch[0]) > 0:
+    #                 continue
+    #             for s_id in chain:
+    #                 si_key = i_s_key[s_id]
+    #         if len(stop_chain[stop_id]) == 0:
+    #             break
 
     return trip_dict
 
@@ -234,10 +251,7 @@ def add_trips(trip_dict):
     for to in trip_dict.values():
         so = to.stop_times[0][0]
         for date in to.dates:
-            trips = so.date_trips.get(date)
-            if trips is None:
-                trips = list()
-                so.date_trips[date] = trips
+            trips = so.date_trips.setdefault(date, list())
             if to not in trips:
                 trips.append(to)
 
@@ -471,6 +485,13 @@ if __name__ == '__main__':
 
     print('Number of stops: ', len(stop_dict))
     print('Number of trips: ', len(trip_dict))
+    tf = list()
+    for so in stop_dict.values():
+        for ts in so.transfers:
+            if ts not in tf:
+                tf.append(ts)
+    for so in tf:
+        print((so.name, so.sn))
 
     # the_day = datetime.datetime(2019, 3, 13, 9, 0)
     the_day = datetime.datetime(2019, 3, 20, 9, 0)
